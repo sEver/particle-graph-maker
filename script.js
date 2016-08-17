@@ -9,8 +9,8 @@ var particleDrivenMap = function(input_data){//
   - Click on a node after you've started some links, to attach your links to that node.
   - Meta+click to start an alternative link (different color)
   - use dat.GUI panel on the right and "addParticle" button to add new node.
+  - use clearing_links to clear all the links or alternative links STARTED from the given node. You can choose the node by clicking it or enter it's number manually
 
- - to save the graph, use dat.GUI panel storaga->save, the map will be saved to localStorage
   Mechanics of particle and approach inspired by
   http://codepen.io/soulwire/pen/Ffvlo/
 
@@ -33,21 +33,31 @@ var particleDrivenMap = function(input_data){//
     //We're gonna use this as distance to the mouse pointer
     //We're squaring this value to compare squares later
     //Which frees us from having to use sqrt
-    this.BRUSH_THICKNESS = Math.pow(200,2);
+    this.BRUSH_THICKNESS_SLIDER = 100;
+    this.BRUSH_THICKNESS = Math.pow(this.BRUSH_THICKNESS_SLIDER, 2);
     this.MANIPULATOR_THICKNESS = Math.pow(5,2);
 
     this.PARTICLE_NUMBER = 0;//how many random particles to add if there's no input data
 
     this.MOUSE_FORCE_ACTIVE = true;
-    this.MOUSE_FORCE = -0.08;
+    this.MOUSE_FORCE = -0.32;
     this.ORIGIN_FORCE_ACTIVE = true;
-    this.ORIGIN_FORCE = 0.03;
+    this.ORIGIN_FORCE = 0.1;
+
+    this.FRICTION = 0.02;
+    this.SPEED_MIN = 0.1;
+    this.SPEED_MAX = 0.1;
+    this.SPEED_MIN_SQUARED = Math.pow(this.SPEED_MIN,2);
+    this.SPEED_MAX_SQUARED = Math.pow(this.SPEED_MAX,2);
+
     this.display_numbers = false;
 
     this.target_node_number = -1;
     this.manual_target = -1;
 		this.ox=0;
     this.oy=0;
+
+    this.node_radius = 3;
 
     ////////////////////////////////////////////////////////////
 
@@ -162,9 +172,35 @@ var particleDrivenMap = function(input_data){//
       particle_list[this.target_node_number].y = this.oy;
     }
 
+    this.shake = function(){
+      var n = particle_list.length;
+      var i = n;
+      while(i--){
+        var p = particle_list[i];
+        p.vx = (Math.random()-0.5)*2;
+        p.vy = (Math.random()-0.5)*2;
+      }
+    }
+
+    this.shake_down = function(){
+      var n = particle_list.length;
+      var i = n;
+      while(i--){
+        var p = particle_list[i];
+        p.vy = (Math.random());
+      }
+    }
+
+    this.shake_left = function(){
+      var n = particle_list.length;
+      var i = n;
+      while(i--){
+        var p = particle_list[i];
+        p.vx = -(Math.random());
+      }
+    }
 
   }//end of Nexus
-
 
   // all the useful names for the thing
   var mainControlNexus = new Nexus();
@@ -173,48 +209,79 @@ var particleDrivenMap = function(input_data){//
 
   var gui = new dat.GUI();
 
-  gui.add(mcn,"MOUSE_FORCE_ACTIVE");
   gui.add(mcn,"ORIGIN_FORCE_ACTIVE");
+  gui.add(mcn,"ORIGIN_FORCE",-0.1,1).step(0.01);
+  gui.add(mcn,"MOUSE_FORCE_ACTIVE");
+
+
+  (function(){//this is an ugly hack enclosed here
+    var temp = mcn.MOUSE_FORCE;
+    // Setting to positive to circumvent the dat GUI bug
+    // which breaks the slider for negative values
+    // see: https://code.google.com/p/dat-gui/issues/detail?id=39
+    mcn.MOUSE_FORCE = 0.5;
+    gui.add(mcn,"MOUSE_FORCE", -(0.8), 1.3).step(0.01);
+  	//setting back to the original value, slider will follow accordingly
+    mcn.MOUSE_FORCE = temp;
+    updateGui(gui);
+  })();
+
+
+  gui.add(mcn,"FRICTION",0,0.2).step(0.01);
+  var ctrlsSpeedMin = gui.add(mcn,"SPEED_MIN",0,2.1);
+  //var ctrlsSpeedMax = gui.add(mcn,"SPEED_MAX",0,10);
+
   gui.add(mcn,"display_numbers");
   gui.add(mcn,"MANIPULATOR_THICKNESS", 10, 900).step(10);
 
+  var ctrlBrushThicknessSlider = gui.add(mcn,"BRUSH_THICKNESS_SLIDER",10,1000).step(10);
+    ctrlBrushThicknessSlider.onChange(function(){
+      mcn.BRUSH_THICKNESS = Math.pow(mcn.BRUSH_THICKNESS_SLIDER,2);
+    });
+
+  gui.add(mcn,"shake");
+  gui.add(mcn,"shake_down");
+  gui.add(mcn,"shake_left");
+
   var f1 = gui.addFolder("storage");
-  f1.add(mcn,"load");
-  f1.add(mcn,"save");
-  f1.add(mcn,"delete");
-  f1.add(mcn,"log");
-  f1.add(mcn,"normalize");
-  f1.add(mcn,"compact");
+    f1.add(mcn,"load");
+    f1.add(mcn,"save");
+    f1.add(mcn,"delete");
+    f1.add(mcn,"log");
+    f1.add(mcn,"normalize");
+    f1.add(mcn,"compact");
 
   var f2 = gui.addFolder("import/export");
-  f2.add(mcn,"import");
-  f2.add(mcn,"export");
+    f2.add(mcn,"import");
+    f2.add(mcn,"export");
 
   var f3 = gui.addFolder("clearing_links");
-  f3.add(mcn,"target_node_number").listen();
-  f3.add(mcn,"clearLinks");
-  f3.add(mcn,"clearAltLinks");
+    f3.add(mcn,"target_node_number").listen();
+    f3.add(mcn,"clearLinks");
+    f3.add(mcn,"clearAltLinks");
 
   var f4 = gui.addFolder("editing nodes");
-  f4.add(mcn,"target_node_number").listen();
-  var manualCtrl = f4.add(mcn,"manual_target");
-  var oxCtrl = f4.add(mcn,"ox",-100,100);
-  var oyCtrl = f4.add(mcn,"oy");
-  f4.add(mcn,"getNode");
-  f4.add(mcn,"setNode");
-  f4.add(mcn,"forceNode");
+    f4.add(mcn,"target_node_number").listen();
+    var ctrlTargetManual = f4.add(mcn,"manual_target");
+    var ctrlOx = f4.add(mcn,"ox",-100,100);
+    var ctrlOy = f4.add(mcn,"oy");
+    f4.add(mcn,"getNode");
+    f4.add(mcn,"setNode");
+    f4.add(mcn,"forceNode");
   gui.add(mcn,"addParticle");
 
   //gui helpers
-  manualCtrl.onChange(function(){
+  ctrlTargetManual.onChange(function(){
     mcn.target_node_number = mcn.manual_target;
   });
-  oxCtrl.onChange(function(){
+
+  ctrlOx.onChange(function(){
   	mcn.setNode();
   });
-  oyCtrl.onChange(function(){
+  ctrlOy.onChange(function(){
     mcn.setNode();
   });
+
   function updateGui(gui){
     console.debug(gui);
     for (var i in gui.__controllers) {
@@ -707,18 +774,6 @@ var particleDrivenMap = function(input_data){//
       my = e.clientY - bounds.top;
     });
 
-    /** /
-    canvas.addEventListener('click',function(e){
-      if(hovered_particle){
-        //hovered_particle.dragged =! hovered_particle.dragged;
-        //console.log("p["+hovered_particle.number+"] dragged:"+hovered_particle.dragged)
-      }else{
-        bounds = canvas.getBoundingClientRect();
-        addParticle(e.clientX,e.clientY);
-      }
-    });
-    /**/
-
     canvas.addEventListener('mousedown',function(e){
       if(hovered_particle){
         if(e.ctrlKey){
@@ -876,14 +931,21 @@ var particleDrivenMap = function(input_data){//
       }
 
       //Slowing down
-      if (Math.abs(p.vx) >= 1){
-        p.vx = p.vx*0.98;
+
+      // Naive friction solution.
+      // This slows down vx or vy when vx or vy is more than SPEED_MIN
+      // But if the sum of vx and vy is more than SPEED_MIN (up to sqrt(2*SPEED_MIN)) it doesn't.
+      // Essentially, this cuts the vector to fit within a square, not a circle with radius of SPEED_MIN;
+
+      if (Math.abs(p.vx) >= settings.SPEED_MIN){
+        p.vx = p.vx*(1-settings.FRICTION);
       }
-      if (Math.abs(p.vy) >=1){
-        p.vy = p.vy*0.98;
+      if (Math.abs(p.vy) >= settings.SPEED_MIN){
+        p.vy = p.vy*(1-settings.FRICTION);
       }
-      p.vx = p.vx*0.98;
-      p.vy = p.vy*0.98;
+
+
+      //var velocity_vector_value_squared = p.vx * p.vx + p.vy * p.vy;
 
       /*
       if ((Math.abs(p.vx) > 1) || (Math.abs(p.vy) > 1)){
@@ -953,7 +1015,7 @@ var particleDrivenMap = function(input_data){//
 
       ////
       // DRAWING A CIRCLE
-      var radius = 3;
+      var radius = settings.node_radius;
       ctx.beginPath();
       ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI, false);
       ctx.fillStyle = settings.colors.node.fill;
