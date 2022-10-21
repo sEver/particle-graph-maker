@@ -6,7 +6,8 @@ Example data is provided.
 
 
 ## How to run:
-
+0. Open https://sever.github.io/particle-graph-maker/
+OR
 1. Download the repo
 2. Open the index.html file in any modern browser
 
